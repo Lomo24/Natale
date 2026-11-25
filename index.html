@@ -9,54 +9,29 @@
     body {
       min-height: 100dvh;
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
       background: #0e121e;
-      color: #f5f8ff;
-      font-family: system-ui, -apple-system, sans-serif;
-      gap: 16px;
       padding: 16px;
+      overflow: hidden;
     }
     canvas {
       width: min(92vw, 480px);
-      height: min(72dvh, 600px);
+      height: min(82dvh, 640px);
       border-radius: 16px;
       background: #0e121e;
       box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
     }
-    .controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      justify-content: center;
-    }
-    button {
-      padding: 10px 20px;
-      border-radius: 999px;
-      border: 1px solid #5fa5ff;
-      background: #222c44;
-      color: #f5f8ff;
-      font-size: 15px;
-      font-weight: 700;
-      cursor: pointer;
-    }
-    button:active { transform: scale(0.98); }
   </style>
 </head>
 <body>
   <canvas id="treeCanvas" width="540" height="660"></canvas>
 
-  <div class="controls">
-    <button id="musicBtn" type="button">Musica: OFF</button>
-  </div>
-
-  <audio id="bgAudio" src="natale.mp3" loop preload="auto"></audio>
+  <audio id="bgAudio" src="natale.mp3" autoplay loop preload="auto" playsinline></audio>
 
   <script>
     const canvas = document.getElementById("treeCanvas");
     const ctx = canvas.getContext("2d");
-    const musicBtn = document.getElementById("musicBtn");
     const bgAudio = document.getElementById("bgAudio");
 
     const PALETTE = [
@@ -193,24 +168,22 @@
     }
     requestAnimationFrame(render);
 
-    // Controllo Musica ON / OFF
-    let musicOn = false;
+    // Avvio automatico di natale.mp3 + sblocco al primo tocco su iOS/Safari
+    function tryPlayAudio() {
+      if (!bgAudio.paused) return;
+      bgAudio.play()
+        .then(() => {
+          document.removeEventListener("pointerdown", tryPlayAudio);
+          document.removeEventListener("touchstart", tryPlayAudio);
+          document.removeEventListener("keydown", tryPlayAudio);
+        })
+        .catch(() => {});
+    }
 
-    musicBtn.addEventListener("click", async () => {
-      if (!musicOn) {
-        try {
-          await bgAudio.play();
-          musicOn = true;
-          musicBtn.textContent = "Musica: ON";
-        } catch (err) {
-          console.error("Errore avvio audio:", err);
-        }
-      } else {
-        bgAudio.pause();
-        musicOn = false;
-        musicBtn.textContent = "Musica: OFF";
-      }
-    });
+    window.addEventListener("load", tryPlayAudio);
+    document.addEventListener("pointerdown", tryPlayAudio);
+    document.addEventListener("touchstart", tryPlayAudio, { passive: true });
+    document.addEventListener("keydown", tryPlayAudio);
   </script>
 </body>
 </html>
