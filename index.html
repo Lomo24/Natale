@@ -20,12 +20,18 @@
     }
     canvas {
       width: min(92vw, 480px);
-      height: min(74dvh, 620px);
+      height: min(72dvh, 600px);
       border-radius: 16px;
       background: #0e121e;
       box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
     }
-    button {
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+    }
+    button, a.link-btn {
       padding: 10px 20px;
       border-radius: 999px;
       border: 1px solid #5fa5ff;
@@ -34,18 +40,35 @@
       font-size: 15px;
       font-weight: 700;
       cursor: pointer;
+      text-decoration: none;
     }
-    button:active { transform: scale(0.98); }
+    button:active, a.link-btn:active { transform: scale(0.98); }
   </style>
 </head>
 <body>
   <canvas id="treeCanvas" width="540" height="660"></canvas>
-  <button id="musicBtn" type="button">Musica: OFF (tocca per attivare)</button>
+
+  <div class="controls">
+    <button id="musicBtn" type="button">Musica: OFF</button>
+    <a class="link-btn" href="https://www.youtube.com/results?search_query=Mariah+Carey+All+I+Want+for+Christmas+Is+You" target="_blank" rel="noopener noreferrer">
+      Apri brano
+    </a>
+  </div>
+
+  <audio id="bgAudio" loop preload="auto"></audio>
 
   <script>
+    // Inserisci qui il nome del file audio nella repo (es. "musica.mp3") oppure lascia "" per la melodia sintetica
+    const AUDIO_SRC = "";
+
     const canvas = document.getElementById("treeCanvas");
     const ctx = canvas.getContext("2d");
     const musicBtn = document.getElementById("musicBtn");
+    const bgAudio = document.getElementById("bgAudio");
+
+    if (AUDIO_SRC) {
+      bgAudio.src = AUDIO_SRC;
+    }
 
     const PALETTE = [
       "rgb(235, 55, 65)",
@@ -115,7 +138,6 @@
 
       ctx.clearRect(0, 0, w, h);
 
-      // Tronco
       const trunkW = Math.max(34, maxTreeHalfWidth / 4);
       const trunkH = 48;
       ctx.fillStyle = "rgb(92, 54, 28)";
@@ -123,7 +145,6 @@
       ctx.roundRect(centerX - trunkW / 2, treeBottomY - 2, trunkW, trunkH, 8);
       ctx.fill();
 
-      // Chioma verde a strati
       const tiers = 16;
       for (let i = 0; i < tiers; i++) {
         const t0 = i / tiers;
@@ -148,7 +169,6 @@
         ctx.fill();
       }
 
-      // Palline colorate in rotazione
       for (const o of ornaments) {
         const y = treeTopY + o.heightRatio * treeHeight;
         const coneHalfW = o.heightRatio * maxTreeHalfWidth * 0.92;
@@ -174,17 +194,16 @@
         }
       }
 
-      // Stella gialla in cima
       drawStar(centerX, treeTopY - 38, 28, 12, starAngle);
-
       requestAnimationFrame(render);
     }
     requestAnimationFrame(render);
 
-    // Melodia natalizia semplice in loop (Web Audio API, nessun file esterno richiesto)
+    // Gestione affidabile ON / OFF con generationId
     let audioCtx = null;
     let musicOn = false;
     let loopTimer = null;
+    let playGen = 0;
 
     const melody = [
       [659.25, 0.35], [659.25, 0.35], [659.25, 0.7],
@@ -192,15 +211,29 @@
       [659.25, 0.35], [783.99, 0.35], [523.25, 0.45], [587.33, 0.25], [659.25, 0.8]
     ];
 
-    function playMelodyOnce() {
-      if (!musicOn || !audioCtx) return;
-      let t = audioCtx.currentTime + 0.05;
+    function stopAllAudio() {
+      playGen++;
+      if (loopTimer !== null) {
+        clearTimeout(loopTimer);
+        loopTimer = null;
+      }
+      if (AUDIO_SRC) {
+        bgAudio.pause();
+      } else if (audioCtx && audioCtx.state === "running") {
+        audioCtx.suspend().catch(() => {});
+      }
+    }
+
+    function playSynthCycle(gen) {
+      if (!musicOn || gen !== playGen || !audioCtx || audioCtx.state !== "running") return;
+
+      let t = audioCtx.currentTime + 0.04;
       for (const [freq, dur] of melody) {
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.type = "triangle";
         osc.frequency.setValueAtTime(freq, t);
-        gain.gain.setValueAtTime(0.001, t);
+        gain.gain.setValueAtTime(0.0001, t);
         gain.gain.exponentialRampToValueAtTime(0.08, t + 0.03);
         gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
         osc.connect(gain);
@@ -209,11 +242,22 @@
         osc.stop(t + dur + 0.02);
         t += dur + 0.05;
       }
-      const totalMs = (t - audioCtx.currentTime) * 1000;
-      loopTimer = setTimeout(playMelodyOnce, totalMs);
+
+      const waitMs = Math.max(50, (t - audioCtx.currentTime) * 1000);
+      loopTimer = setTimeout(() => playSynthCycle(gen), waitMs);
     }
 
-    musicBtn.addEventListener("click", async () => {
+    async function startAllAudio() {
+      const gen = ++playGen;
+      if (AUDIO_SRC) {
+        try {
+          await bgAudio.play();
+        } catch (err) {
+          console.error(err);
+        }
+        return;
+      }
+
       if (!audioCtx) {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         audioCtx = new AudioContextClass();
@@ -221,13 +265,19 @@
       if (audioCtx.state === "suspended") {
         await audioCtx.resume();
       }
+      if (musicOn && gen === playGen) {
+        playSynthCycle(gen);
+      }
+    }
+
+    musicBtn.addEventListener("click", async () => {
       musicOn = !musicOn;
       if (musicOn) {
         musicBtn.textContent = "Musica: ON";
-        playMelodyOnce();
+        await startAllAudio();
       } else {
         musicBtn.textContent = "Musica: OFF";
-        clearTimeout(loopTimer);
+        stopAllAudio();
       }
     });
   </script>
